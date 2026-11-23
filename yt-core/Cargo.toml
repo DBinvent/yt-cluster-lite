@@ -87,5 +87,5 @@ tokio = { version = "^1.52", features = ["macros", "rt", "rt-multi-thread", "tim
 tokio-stream = { version = "^0.1", features = ["net"] }
 tokio-postgres = "^0.7"
 # tests/sqlite_ext.rs: a SQLite of its own that loads yt-sqlite, the extension (YT_SQLITE_EXT)
-rusqlite = { version = "^0.42", features = ["bundled", "load_extension"] }
+rusqlite = { version = "^0.43", features = ["bundled", "load_extension"] }
 serde_json = "^1"

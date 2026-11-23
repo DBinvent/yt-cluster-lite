@@ -154,6 +154,13 @@ yt_xa_ask(const char *prefix, const char *text, const char **err)
 
 static void ensure_connected(const char *func_name);
 
+/* [ycoord] yt_xa_ask for ycoord.c */
+char *
+yt_cluster_ask(const char *prefix, const char *text, const char **err)
+{
+    return yt_xa_ask(prefix, text, err);
+}
+
 /*
  * A client's own two-phase commit: the gid of a PREPARE TRANSACTION, for its PRE_PREPARE; and a COMMIT
  * PREPARED or ROLLBACK PREPARED - from any session - finishes the cluster side
@@ -303,6 +310,8 @@ _PG_init(void)
                              NULL, NULL, NULL);
 
     RegisterXactCallback(yt_cluster_xact_callback, NULL);
+    /* [ycoord] a transaction's cluster locks go at its end */
+    yt_ycoord_init();
     /* A savepoint rolled back past a failed trigger call */
     RegisterSubXactCallback(yt_cluster_subxact_callback, NULL);
     /* A client's PREPARE TRANSACTION / COMMIT PREPARED / ROLLBACK PREPARED */

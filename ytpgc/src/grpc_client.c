@@ -222,6 +222,15 @@ cancel_check(void *clientp, curl_off_t dltotal, curl_off_t dlnow,
     return (QueryCancelPending && INTERRUPTS_CAN_BE_PROCESSED()) ? 1 : 0;
 }
 
+/* [ycoord] a time limit on each call from now on, ms; 0 none (yt_cluster_grpc_call_timeout) */
+static long g_call_timeout_ms = 0;
+
+void
+yt_cluster_grpc_call_timeout(long ms)
+{
+    g_call_timeout_ms = ms > 0 ? ms : 0;
+}
+
 /*
  * Initialize curl handle
  */
@@ -393,6 +402,10 @@ grpc_call(const char *method, const uint8_t *req_data, size_t req_len,
     /* Configure curl */
     curl_easy_reset(g_curl);
     curl_easy_setopt(g_curl, CURLOPT_URL, url);
+    /* [ycoord] a call that must end even with interrupts held: the cancel of a wait, the
+     * release at a transaction's or a session's end */
+    if (g_call_timeout_ms > 0)
+        curl_easy_setopt(g_curl, CURLOPT_TIMEOUT_MS, g_call_timeout_ms);
     /* capture grpc-status / grpc-message from headers+trailers */
     curl_easy_setopt(g_curl, CURLOPT_HEADERFUNCTION, header_callback);
     curl_easy_setopt(g_curl, CURLOPT_HEADERDATA, NULL);

@@ -86,6 +86,104 @@ CREATE FUNCTION yt_s3_probe(dir text)
 REVOKE ALL ON FUNCTION yt_s3_blob() FROM PUBLIC;
 REVOKE ALL ON FUNCTION yt_s3_probe(text) FROM PUBLIC;
 
+-- [ycoord] Cluster-wide advisory locks and sequences, as pg_advisory_lock() and nextval()
+-- across the cluster: held on the node's ytserv, decided by its etcd's leader. The cluster
+-- off for the session (yt.node = 'local'): PostgreSQL's own advisory locks, and the local
+-- sequence's nextval().
+-- yt_advisory_lock(key): waits until this session holds it; held again, once more
+CREATE FUNCTION yt_advisory_lock(key bigint)
+    RETURNS void
+    LANGUAGE c STRICT VOLATILE
+    AS 'MODULE_PATHNAME', 'yt_advisory_lock';
+-- yt_try_advisory_lock(key): the lock now, or false
+CREATE FUNCTION yt_try_advisory_lock(key bigint)
+    RETURNS boolean
+    LANGUAGE c STRICT VOLATILE
+    AS 'MODULE_PATHNAME', 'yt_try_advisory_lock';
+-- yt_advisory_unlock(key): one hold let go; false, with a warning, when none was held
+CREATE FUNCTION yt_advisory_unlock(key bigint)
+    RETURNS boolean
+    LANGUAGE c STRICT VOLATILE
+    AS 'MODULE_PATHNAME', 'yt_advisory_unlock';
+-- yt_advisory_xact_lock(key): as yt_advisory_lock, until the transaction ends
+CREATE FUNCTION yt_advisory_xact_lock(key bigint)
+    RETURNS void
+    LANGUAGE c STRICT VOLATILE
+    AS 'MODULE_PATHNAME', 'yt_advisory_xact_lock';
+-- yt_nextval(seq): the next number of seq's cluster sequence (yt_create_sequence); a column
+-- default as nextval('seq') is
+CREATE FUNCTION yt_nextval(seq regclass)
+    RETURNS bigint
+    LANGUAGE c STRICT VOLATILE
+    AS 'MODULE_PATHNAME', 'yt_nextval';
+-- yt_create_sequence(seq, cache, if_missing): the cluster sequence of the local sequence seq,
+-- above its last value, each node taking cache numbers at once; the first number it hands
+-- out. There already: refused - or with if_missing moved above this node's seq, its next.
+CREATE FUNCTION yt_create_sequence(seq regclass, cache integer DEFAULT 1, if_missing boolean DEFAULT false)
+    RETURNS bigint
+    LANGUAGE c VOLATILE
+    AS 'MODULE_PATHNAME', 'yt_create_sequence';
+-- yt_cluster_sequences(rel, cluster): a table's sequences switched to the cluster's (true) or
+-- back to its own (false), on this node - run on each, as yt_setup is. Each column default
+-- nextval('s') becomes yt_nextval('s'), its cluster sequence made when missing, above the
+-- column's largest value; back, the local sequence is moved above every number the
+-- cluster's handed out and the cluster's dropped - a node still on it is refused, not given
+-- numbers twice: switch every node. The number of columns switched. yt_setup runs it for a table
+-- whose config says cluster_sequence (or def_cluster_sequence for all).
+CREATE FUNCTION yt_cluster_sequences(rel regclass, cluster boolean DEFAULT true)
+    RETURNS integer
+    LANGUAGE plpgsql
+AS $ycoord$
+DECLARE
+    r       record;
+    n       integer := 0;
+    top     bigint;
+    seqname text;
+    nxt     bigint;
+BEGIN
+    -- [ycoord] each column whose default draws on a sequence (nextval or yt_nextval): an
+    -- identity column has no default of the kind, and is left as it is
+    FOR r IN SELECT a.attname, dep.refobjid::regclass AS seq, pg_get_expr(d.adbin, d.adrelid) AS expr
+             FROM pg_attrdef d
+             JOIN pg_attribute a ON a.attrelid = d.adrelid AND a.attnum = d.adnum AND NOT a.attisdropped
+             JOIN pg_depend dep ON dep.classid = 'pg_attrdef'::regclass AND dep.objid = d.oid
+                               AND dep.refclassid = 'pg_class'::regclass
+             JOIN pg_class s ON s.oid = dep.refobjid AND s.relkind = 'S'
+             WHERE d.adrelid = rel
+             ORDER BY a.attnum LOOP
+        SELECT n2.nspname || '.' || c2.relname INTO seqname
+            FROM pg_class c2 JOIN pg_namespace n2 ON n2.oid = c2.relnamespace WHERE c2.oid = r.seq;
+        IF cluster AND r.expr NOT LIKE '%yt_nextval(%' THEN
+            -- the local sequence above the column's largest value, so the cluster's starts above both
+            EXECUTE format('SELECT max(%I)::bigint FROM %s', r.attname, rel) INTO top;
+            IF top IS NOT NULL AND top > coalesce(pg_sequence_last_value(r.seq), top - 1) THEN
+                PERFORM setval(r.seq, top, true);
+            END IF;
+            PERFORM @extschema@.yt_create_sequence(r.seq, 1, true);
+            EXECUTE format('ALTER TABLE %s ALTER COLUMN %I SET DEFAULT @extschema@.yt_nextval(%L::regclass)',
+                rel, r.attname, r.seq::text);
+            n := n + 1;
+        ELSIF NOT cluster AND r.expr LIKE '%yt_nextval(%' THEN
+            -- the local sequence above every number the cluster's handed out, and the cluster's
+            -- dropped, its mark kept: a node still on it is refused its next block rather than
+            -- handed numbers this one's local sequence gives now
+            SELECT (x ->> 'value')::bigint INTO nxt
+                FROM json_array_elements(@extschema@.yt_info('sq-:' || octet_length(current_database()) || '|'
+                    || current_database() || seqname)) x LIMIT 1;
+            IF nxt IS NOT NULL AND nxt - 1 > coalesce(pg_sequence_last_value(r.seq), nxt - 2) THEN
+                PERFORM setval(r.seq, nxt - 1, true);
+            END IF;
+            EXECUTE format('ALTER TABLE %s ALTER COLUMN %I SET DEFAULT nextval(%L::regclass)',
+                rel, r.attname, r.seq::text);
+            n := n + 1;
+        END IF;
+    END LOOP;
+    RETURN n;
+END
+$ycoord$;
+-- a table's defaults are DDL: the owner's or a superuser's to grant
+REVOKE ALL ON FUNCTION yt_cluster_sequences(regclass, boolean) FROM PUBLIC;
+
 -- yt_ct_encode(input text)
 -- A table config as JSON - the form yt_ct_decode prints - to the base64 protobuf
 -- an A row holds; ytserv converts it (yt_info('ct+:...')). ytctl --encode-table-cfg
@@ -600,6 +698,18 @@ BEGIN
                         -- runs under SET LOCAL yt.node = 'local'.
                         EXECUTE format('CREATE OR REPLACE TRIGGER %I AFTER TRUNCATE ON %s FOR EACH STATEMENT EXECUTE PROCEDURE @extschema@.yt_synchronize()'
                             , 'zytsynct_' || row.schema || '_' || row.table, row.schema || '.' || row.table);
+
+                        -- [ycoord] The table's sequences the cluster's, when its config
+                        -- says so (cluster_sequence, or def_cluster_sequence): its column
+                        -- defaults to yt_nextval. Not switched, the trigger stays all the same.
+                        BEGIN
+                            IF coalesce((SELECT x ->> 'value' FROM json_array_elements(@extschema@.yt_info('sq?:'
+                                    || current_database() || '.' || row.schema || '.' || row.table)) x LIMIT 1), 'off') = 'on' THEN
+                                PERFORM @extschema@.yt_cluster_sequences(format('%I.%I', row.schema, row.table)::regclass, true);
+                            END IF;
+                        EXCEPTION WHEN OTHERS THEN
+                            RAISE WARNING 'yt_setup: %.%: its sequences stay its own: %', row.schema, row.table, SQLERRM;
+                        END;
 
                         -- Without a single integer primary key a table is not
                         -- framed: recon compares it row by row, with no cheap whole-table

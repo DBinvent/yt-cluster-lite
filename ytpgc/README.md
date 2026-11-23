@@ -7,7 +7,8 @@
 - A transaction callback asks the node to prepare, commit or roll back the
   cluster side of each transaction, so the other nodes see the same outcome.
 - SQL functions (`yt_info`, `yt_merge`, `yt_llm_query`, `yt_diff_apply` and
-  others) give access to the node and to the diff helpers. Their definitions
+  others) give access to the node and to the diff helpers; `yt_advisory_lock`,
+  `yt_nextval` and their kin are cluster-wide locks and sequences. Their definitions
   are in `yt_cluster--1.21.sql`.
 
 ## Version
@@ -195,6 +196,46 @@ psql -d <db> -f ytpgc/test_bson.sql
   to a merge table, which is compared path by path. Without this rule the peers
   applied the lower subterm first, the compare-and-set missed the row, and the
   copies stayed apart.
+
+## Cluster locks and sequences
+
+PostgreSQL's advisory locks and `nextval()`, across the cluster (`src/ycoord.c`; the node
+side is ytserv's `state/ycoord.rs`, decided by its etcd's leader):
+
+| function | what |
+|---|---|
+| `yt_advisory_lock(key bigint)` | waits until this session holds the cluster lock; held again, once more |
+| `yt_try_advisory_lock(key bigint) -> bool` | the lock now, or false while another holds it or waits for it |
+| `yt_advisory_unlock(key bigint) -> bool` | one hold let go; false, with a warning, when none was held |
+| `yt_advisory_xact_lock(key bigint)` | as `yt_advisory_lock`, until the transaction ends |
+| `yt_nextval(seq regclass) -> bigint` | the next number of `seq`'s cluster sequence: a column default as `nextval('seq')` is |
+| `yt_create_sequence(seq regclass, cache int = 1, if_missing bool = false) -> bigint` | the cluster sequence of the local sequence `seq`, above its last value; each node takes `cache` numbers at once. Its owner's |
+| `yt_cluster_sequences(rel regclass, cluster bool = true) -> int` | a table's column defaults `nextval('s')` to `yt_nextval('s')` (each one's cluster sequence made above the column's largest value), or back: the local sequence moved above every number the cluster's gave. On this node - run it on each, as `yt_setup`; `ytctl --cluster-sequences on|off` does it for the synced tables |
+
+- **Locks** are per database, as PostgreSQL's are, and held by the backend (its pid and
+  start time). A blocking lock asks again about each second, checking for a cancel in
+  between: query cancel and `statement_timeout` work, and a wait given up leaves the queue.
+  A transaction's locks go at its end, a session's at the backend's exit; a rolled-back
+  subtransaction lets go of the transaction locks it took. ytserv frees the locks of a
+  backend `pg_stat_activity` no longer shows, and a PostgreSQL restart frees every lock of
+  the node.
+- **A holder never outlives its lock.** The node's locks are held under one lease of the
+  lock timeout (etcds' `lock_ttl`, 60 s): when ytserv cannot keep it alive for nearly that
+  long, or finds it gone, it ends the backends holding cluster locks before the locks can
+  go to another node - their transactions roll back.
+- **PREPARE TRANSACTION** is refused while the transaction holds cluster transaction locks
+  (`yt_advisory_xact_lock`): PostgreSQL would carry them to the prepared transaction, and a
+  cluster lock is the backend's.
+- **Sequences**: the local sequence is the cluster sequence's twin. With each number the
+  twin's last value goes along, and one past what the cluster gave - numbers the twin gave
+  while the cluster was off - moves the cluster sequence above it first: nothing repeats.
+  `yt_setup` switches a table's defaults when its config says `cluster_sequence` (or the C
+  setting `def_cluster_sequence`, off by default, for every table). Back to its own, a
+  table's cluster sequence is dropped, its mark kept: a node still on it is refused its next
+  block rather than given numbers twice - switch every node.
+- **The cluster off** for a session (`SET yt.node = 'local'`): the locks are PostgreSQL's own
+  advisory locks, and `yt_nextval` is the twin's `nextval()`.
+- A database installed before these functions gets them from ytserv at its load.
 
 ## Savepoints
 

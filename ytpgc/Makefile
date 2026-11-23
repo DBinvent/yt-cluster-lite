@@ -13,7 +13,7 @@ MODULE_big = yt_cluster
 # (previous-versions.txt; made from the script by update-sql.py, `make update-sql`)
 DATA = yt_cluster--$(YT_CLUSTER_VERSION_CTL).sql $(wildcard yt_cluster--*--$(YT_CLUSTER_VERSION_CTL).sql)
 OBJS = src/yt_cluster.o src/grpc_client.o src/protobuf.o src/diff_apply_pg.o \
-       src/diff_encode_pg.o src/llm.o \
+       src/diff_encode_pg.o src/llm.o src/ycoord.o \
        src/proto/base.pb-c.o src/proto/db.pb-c.o \
        src/proto/diff_doc.pb-c.o src/proto/diff_apply.o \
        src/proto/bson_doc.o

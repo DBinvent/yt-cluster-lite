@@ -381,6 +381,13 @@ void yt_cluster_pb_free_db_input_entity(DbInputEntity *req);
 
 char *yt_cluster_get_guc_string(const char *name);
 bool yt_cluster_is_endless_loop(void);
+/* [ycoord] yt_info('<prefix><text>') of ytserv: its one-row answer (palloc'd), or NULL with the
+ * reason in *err - never raises */
+char *yt_cluster_ask(const char *prefix, const char *text, const char **err);
+/* [ycoord] cluster-wide advisory locks and sequences (ycoord.c): its transaction callback */
+void yt_ycoord_init(void);
+/* [ycoord] a time limit on each call from now on, ms; 0 none */
+void yt_cluster_grpc_call_timeout(long ms);
 char *yt_cluster_info_response_to_json(const InfoResponse *resp);
 void yt_cluster_ensure_connected(const char *func_name);
 
