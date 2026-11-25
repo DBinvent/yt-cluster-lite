@@ -1,0 +1,125 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.5",
+  "serialNumber": "urn:uuid:bb4c57f1-a2ab-417c-9d3b-f997ef0153c9",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-25T20:55:23Z",
+    "component": {
+      "type": "library",
+      "bom-ref": "pkg:generic/yt_cluster@1.21.0",
+      "name": "yt_cluster",
+      "version": "1.21.0",
+      "description": "YT Cluster's PostgreSQL extension (ytpgc), as built for PostgreSQL 16",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:generic/yt_cluster@1.21.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:deb/ubuntu/libcurl4t64@8.5.0-2ubuntu10.16?arch=amd64&distro=ubuntu-24.04",
+      "name": "libcurl4t64",
+      "version": "8.5.0-2ubuntu10.16",
+      "purl": "pkg:deb/ubuntu/libcurl4t64@8.5.0-2ubuntu10.16?arch=amd64&distro=ubuntu-24.04",
+      "licenses": [
+        {
+          "license": {
+            "name": "curl"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "yt:soname",
+          "value": "libcurl.so.4"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:deb/ubuntu/libprotobuf-c1@1.4.1-1ubuntu4?arch=amd64&distro=ubuntu-24.04",
+      "name": "libprotobuf-c1",
+      "version": "1.4.1-1ubuntu4",
+      "purl": "pkg:deb/ubuntu/libprotobuf-c1@1.4.1-1ubuntu4?arch=amd64&distro=ubuntu-24.04",
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD-2-Clause"
+          }
+        }
+      ],
+      "properties": [
+        {
+          "name": "yt:soname",
+          "value": "libprotobuf-c.so.1"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:deb/ubuntu/libc6@2.39-0ubuntu8.12?arch=amd64&distro=ubuntu-24.04",
+      "name": "libc6",
+      "version": "2.39-0ubuntu8.12",
+      "purl": "pkg:deb/ubuntu/libc6@2.39-0ubuntu8.12?arch=amd64&distro=ubuntu-24.04",
+      "licenses": [
+        {
+          "expression": "LGPL-2.1-or-later"
+        }
+      ],
+      "properties": [
+        {
+          "name": "yt:soname",
+          "value": "libc.so.6"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "bom-ref": "pkg:deb/ubuntu/postgresql-16@16.16-1.pgdg24.04%2B1?arch=amd64&distro=ubuntu-24.04",
+      "name": "postgresql-16",
+      "version": "16.16-1.pgdg24.04+1",
+      "purl": "pkg:deb/ubuntu/postgresql-16@16.16-1.pgdg24.04%2B1?arch=amd64&distro=ubuntu-24.04",
+      "licenses": [
+        {
+          "license": {
+            "name": "PostgreSQL"
+          }
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/yt_cluster@1.21.0",
+      "dependsOn": [
+        "pkg:deb/ubuntu/libcurl4t64@8.5.0-2ubuntu10.16?arch=amd64&distro=ubuntu-24.04",
+        "pkg:deb/ubuntu/libprotobuf-c1@1.4.1-1ubuntu4?arch=amd64&distro=ubuntu-24.04",
+        "pkg:deb/ubuntu/libc6@2.39-0ubuntu8.12?arch=amd64&distro=ubuntu-24.04",
+        "pkg:deb/ubuntu/postgresql-16@16.16-1.pgdg24.04%2B1?arch=amd64&distro=ubuntu-24.04"
+      ]
+    },
+    {
+      "ref": "pkg:deb/ubuntu/libcurl4t64@8.5.0-2ubuntu10.16?arch=amd64&distro=ubuntu-24.04",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:deb/ubuntu/libprotobuf-c1@1.4.1-1ubuntu4?arch=amd64&distro=ubuntu-24.04",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:deb/ubuntu/libc6@2.39-0ubuntu8.12?arch=amd64&distro=ubuntu-24.04",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:deb/ubuntu/postgresql-16@16.16-1.pgdg24.04%2B1?arch=amd64&distro=ubuntu-24.04",
+      "dependsOn": []
+    }
+  ]
+}
