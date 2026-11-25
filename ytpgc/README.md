@@ -217,12 +217,16 @@ side is ytserv's `state/ycoord.rs`, decided by its etcd's leader):
   between: query cancel and `statement_timeout` work, and a wait given up leaves the queue.
   A transaction's locks go at its end, a session's at the backend's exit; a rolled-back
   subtransaction lets go of the transaction locks it took. ytserv frees the locks of a
-  backend `pg_stat_activity` no longer shows, and a PostgreSQL restart frees every lock of
-  the node.
-- **A holder never outlives its lock.** The node's locks are held under one lease of the
-  lock timeout (etcds' `lock_ttl`, 60 s): when ytserv cannot keep it alive for nearly that
-  long, or finds it gone, it ends the backends holding cluster locks before the locks can
-  go to another node - their transactions roll back.
+  backend `pg_stat_activity` no longer shows.
+- **Held as PostgreSQL holds it.** A lock is taken once a majority of the nodes keeps it, in
+  each node's `yt_config` (module Q, beside the sequences' marks), and is held while its
+  backend runs: a restart of ytserv, or of every ytserv, leaves it held. The node's locks
+  are under one lease that does not run out; it goes with PostgreSQL - a restart of
+  PostgreSQL, or PostgreSQL not running (its socket's lock file gone), seen by ytserv while
+  it runs or at its start, frees every lock of the node at once.
+- **A holder never outlives its lock.** When ytserv finds the node's lease gone (revoked at
+  the leader), it ends the backends holding cluster locks before the locks can go to another
+  node - their transactions roll back.
 - **PREPARE TRANSACTION** is refused while the transaction holds cluster transaction locks
   (`yt_advisory_xact_lock`): PostgreSQL would carry them to the prepared transaction, and a
   cluster lock is the backend's.

@@ -225,9 +225,14 @@ ycoord_ask(const char *fn, const char *prefix, const char *text)
     char       *v = yt_cluster_ask(prefix, text, &err);
 
     if (v == NULL)
+    {
+        /* [ycoord] a cancel or a statement_timeout that came while the ask was on the way broke
+         * the call off: that is the error to raise (57014), not the cluster's (08006) */
+        CHECK_FOR_INTERRUPTS();
         ereport(ERROR,
                 (errcode(ERRCODE_CONNECTION_FAILURE),
                  errmsg("%s: the cluster could not be asked: %s", fn, err ? err : "no answer")));
+    }
     return v;
 }
 
